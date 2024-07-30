@@ -1,30 +1,32 @@
 // global ------------------------------------------------------------------------------------------
 
 // TODO: set these via env variables
-const SERVICE_NAME = "hobo"
-const VERSION = "0.0.1"
+const SERVICE_NAME = "hobo";
+const VERSION = "0.0.1";
 const DEBUG = false;
-const LOG_LEVEL = DEBUG ? "debug" : "info"
-const UNIT: Units = "miles"
+const LOG_LEVEL = DEBUG ? "debug" : "info";
+const UNIT: Units = "miles";
 const DEVICE_ID = Math.floor(Math.random() * 10 ** 8).toString();
 const BASE_URL = `https://passio3.com/www/mapGetData.php?wTransloc=1&deviceId=${DEVICE_ID}`;
 const HOBOKEN_SYSTEM_ID = "466";
 
-type LogLevel = "debug" | "info" | "warn" | "error" | "fatal"
+type LogLevel = "debug" | "info" | "warn" | "error" | "fatal";
 const LogPriorities: Record<LogLevel, number> = <const>{
-  "fatal": -1,
-  "error": 0,
-  "warn": 10,
-  "info": 20,
-  "debug": 100
-}
-Object.freeze(LogPriorities)
-const GlobalPriority = LogPriorities[LOG_LEVEL]
+  fatal: -1,
+  error: 0,
+  warn: 10,
+  info: 20,
+  debug: 100,
+};
+Object.freeze(LogPriorities);
+const GlobalPriority = LogPriorities[LOG_LEVEL];
 
 function logger(level: LogLevel, message: string, ...rest: any): void {
-  const givenPriority = LogPriorities[level]
+  const givenPriority = LogPriorities[level];
   if (givenPriority <= GlobalPriority) {
-    console.log(`${(new Date()).toISOString()} [${SERVICE_NAME}-${VERSION}] ${level}: ${message} ${rest}`)
+    console.log(
+      `${new Date().toISOString()} [${SERVICE_NAME}-${VERSION}] ${level}: ${message} ${rest}`
+    );
   }
 }
 
@@ -124,7 +126,7 @@ async function getRoutes() {
 
   // TODO: runtime validation
   const routesData = (await res.json()) as PassioRoute[];
-  logger("debug", "Routes data: ", routesData)
+  logger("debug", "Routes data: ", routesData);
   return routesData;
 }
 
@@ -139,7 +141,7 @@ async function getStops() {
 
   // TODO: runtime validation
   const stopsData = (await res.json()) as StopsResponse;
-  logger("debug", "Stops data: ", stopsData)
+  logger("debug", "Stops data: ", stopsData);
   return stopsData;
 }
 
@@ -154,13 +156,13 @@ async function getBuses() {
 
   // TODO: runtime validation
   const busesData = (await res.json()) as BusesResponse;
-  logger("debug", "Buses data: ", busesData)
+  logger("debug", "Buses data: ", busesData);
   return busesData;
 }
 
 // core --------------------------------------------------------------------------------------------
 
-type Coord = [number, number]
+type Coord = [number, number];
 type Node = Coord;
 type RouteId = string;
 type BusId = string;
@@ -205,13 +207,17 @@ function parsePosition(lat: string, long: string): Coord {
 function parseRoutesAndStations(
   routeData: PassioRoute[],
   stopsData: StopsResponse
-): { routes: Record<RouteId, Route>; stations: Record<StationId, Station>; excludedRoutes: RouteId[] } {
+): {
+  routes: Record<RouteId, Route>;
+  stations: Record<StationId, Station>;
+  excludedRoutes: RouteId[];
+} {
   const stations: Record<StationId, Station> = {};
   const routes: Record<RouteId, Route> = {};
-  const excludedRoutes = stopsData.excludedRoutesID.map(String)
+  const excludedRoutes = stopsData.excludedRoutesID.map(String);
   routeData.forEach((rawRoute) => {
     if (excludedRoutes.includes(rawRoute.myid)) {
-      return
+      return;
     }
     const rawPath = stopsData.routes[rawRoute.myid].slice(2);
     const parsedPath: Station[] = rawPath.map((routeEntry) => {
@@ -249,11 +255,14 @@ function parseRoutesAndStations(
   return {
     routes,
     stations,
-    excludedRoutes
+    excludedRoutes,
   };
 }
 
-function parseBuses(busesData: BusesResponse, excludedRoutes: RouteId[]): Record<BusId, Bus> {
+function parseBuses(
+  busesData: BusesResponse,
+  excludedRoutes: RouteId[]
+): Record<BusId, Bus> {
   const buses: Record<BusId, Bus> = {};
   Object.entries(busesData.buses).forEach(([busId, rawBuses]) => {
     if (excludedRoutes.includes(busId) || rawBuses.length === 0) {
@@ -302,7 +311,7 @@ function argMin<T>(arr: T[]): number {
   return idx;
 }
 
-type StationsToNodes = Record<RouteId, Record<StationId, number>>
+type StationsToNodes = Record<RouteId, Record<StationId, number>>;
 
 function mapStationsToNodes(routes: Record<RouteId, Route>): StationsToNodes {
   const stationsToNodes: StationsToNodes = {};
@@ -326,9 +335,7 @@ function getNextStation(
   stationsToNodes: StationsToNodes,
   stations: Record<StationId, Station>
 ): [number, number] {
-  const currIdx = argMin(
-    route.nodes.map((p) => distance(bus.position, p))
-  );
+  const currIdx = argMin(route.nodes.map((p) => distance(bus.position, p)));
 
   // TODO: this is a mess lmao
   const stationsForRoute = stationsToNodes[route.id];
@@ -470,7 +477,10 @@ async function main() {
   const stopsData = await getStops();
   const busesData = await getBuses();
 
-  const { routes, stations, excludedRoutes } = parseRoutesAndStations(routesData, stopsData);
+  const { routes, stations, excludedRoutes } = parseRoutesAndStations(
+    routesData,
+    stopsData
+  );
   const buses = parseBuses(busesData, excludedRoutes);
   const stationsToNodes = mapStationsToNodes(routes);
 
@@ -484,8 +494,8 @@ async function main() {
     );
     logger("info", `${distanceToNextStation} ${UNIT}`);
   } else {
-    logger("info", "No bus data")
+    logger("info", "No bus data");
   }
 }
 
-await main()
+await main();
