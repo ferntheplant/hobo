@@ -1,9 +1,34 @@
-import * as turf from "@turf/turf";
+// global ------------------------------------------------------------------------------------------
 
+// TODO: set these via env variables
+const SERVICE_NAME = "hobo"
+const VERSION = "0.0.1"
 const DEBUG = false;
+const LOG_LEVEL = DEBUG ? "debug" : "info"
+const UNIT: Units = "miles"
 const DEVICE_ID = Math.floor(Math.random() * 10 ** 8).toString();
 const BASE_URL = `https://passio3.com/www/mapGetData.php?wTransloc=1&deviceId=${DEVICE_ID}`;
 const HOBOKEN_SYSTEM_ID = "466";
+
+type LogLevel = "debug" | "info" | "warn" | "error" | "fatal"
+const LogPriorities: Record<LogLevel, number> = <const>{
+  "fatal": -1,
+  "error": 0,
+  "warn": 10,
+  "info": 20,
+  "debug": 100
+}
+Object.freeze(LogPriorities)
+const GlobalPriority = LogPriorities[LOG_LEVEL]
+
+function logger(level: LogLevel, message: string, ...rest: any): void {
+  const givenPriority = LogPriorities[level]
+  if (givenPriority <= GlobalPriority) {
+    console.log(`${(new Date()).toISOString()} [${SERVICE_NAME}-${VERSION}] ${level}: ${message} ${rest}`)
+  }
+}
+
+// passio-api --------------------------------------------------------------------------------------
 
 type PassioRoute = {
   name: string;
@@ -60,11 +85,11 @@ type PassioGroupRoute = {
 };
 
 type StopsResponse = {
-  stops: { [K: string]: PassioStop }; // keyed by "ID<stopId>"
-  routes: { [K: string]: PassioStopRoute }; // keyed by routeId
-  routePoints: { [K: string]: PassioRoutePoint[] }; // keyed by routeId
-  groupPoints: { [HOBOKEN_SYSTEM_ID]: { [K: string]: PassioGroupRoute } }; // keyed by routeId
-  excludedRoutesID: string[];
+  stops: Record<string, PassioStop>; // keyed by "ID<stopId>"
+  routes: Record<string, PassioStopRoute>; // keyed by routeId
+  routePoints: Record<string, PassioRoutePoint[]>; // keyed by routeId
+  groupPoints: { [HOBOKEN_SYSTEM_ID]: Record<string, PassioGroupRoute> }; // keyed by routeId
+  excludedRoutesID: number[];
 };
 
 type PassioBus = {
@@ -84,8 +109,8 @@ type PassioBus = {
 };
 
 type BusesResponse = {
-  buses: { [K: string]: PassioBus[] };
-  excludedRoutes: string[];
+  buses: Record<string, PassioBus[]>;
+  excludedRoutes: number[];
 };
 
 async function getRoutes() {
@@ -99,6 +124,7 @@ async function getRoutes() {
 
   // TODO: runtime validation
   const routesData = (await res.json()) as PassioRoute[];
+  logger("debug", "Routes data: ", routesData)
   return routesData;
 }
 
@@ -113,6 +139,7 @@ async function getStops() {
 
   // TODO: runtime validation
   const stopsData = (await res.json()) as StopsResponse;
+  logger("debug", "Stops data: ", stopsData)
   return stopsData;
 }
 
@@ -127,11 +154,14 @@ async function getBuses() {
 
   // TODO: runtime validation
   const busesData = (await res.json()) as BusesResponse;
+  logger("debug", "Buses data: ", busesData)
   return busesData;
 }
 
-type Point = ReturnType<typeof turf.point>;
-type Node = Point;
+// core --------------------------------------------------------------------------------------------
+
+type Coord = [number, number]
+type Node = Coord;
 type RouteId = string;
 type BusId = string;
 type StationId = string;
@@ -140,7 +170,7 @@ type GroupId = string;
 type Route = {
   id: RouteId; // myid
   active: boolean;
-  position: Point;
+  position: Coord;
   distance: number;
   timezone: string;
   groupId: GroupId;
@@ -155,7 +185,7 @@ type Bus = {
   routeId: RouteId;
   active: boolean;
   load: number;
-  position: Point;
+  position: Coord;
   bearing: number;
 };
 
@@ -164,25 +194,25 @@ type Station = {
   name: string;
   routeId: RouteId;
   index: number;
-  position: Point;
+  position: Coord;
   radius: number;
 };
 
-function parsePosition(lat: string, long: string): Point {
-  return toPoint(parseFloat(lat), parseFloat(long));
-}
-
-function toPoint(lat: number, long: number): Point {
-  return turf.point([lat, long]);
+function parsePosition(lat: string, long: string): Coord {
+  return [parseFloat(lat), parseFloat(long)];
 }
 
 function parseRoutesAndStations(
   routeData: PassioRoute[],
   stopsData: StopsResponse
-): { routes: { [K: RouteId]: Route }; stations: { [K: StationId]: Station } } {
-  const stations: { [K: StationId]: Station } = {};
-  const routes: { [K: RouteId]: Route } = {};
+): { routes: Record<RouteId, Route>; stations: Record<StationId, Station>; excludedRoutes: RouteId[] } {
+  const stations: Record<StationId, Station> = {};
+  const routes: Record<RouteId, Route> = {};
+  const excludedRoutes = stopsData.excludedRoutesID.map(String)
   routeData.forEach((rawRoute) => {
+    if (excludedRoutes.includes(rawRoute.myid)) {
+      return
+    }
     const rawPath = stopsData.routes[rawRoute.myid].slice(2);
     const parsedPath: Station[] = rawPath.map((routeEntry) => {
       const stationId = routeEntry[1];
@@ -219,13 +249,14 @@ function parseRoutesAndStations(
   return {
     routes,
     stations,
+    excludedRoutes
   };
 }
 
-function parseBuses(busesData: BusesResponse): { [K: BusId]: Bus } {
-  const buses: { [K: BusId]: Bus } = {};
+function parseBuses(busesData: BusesResponse, excludedRoutes: RouteId[]): Record<BusId, Bus> {
+  const buses: Record<BusId, Bus> = {};
   Object.entries(busesData.buses).forEach(([busId, rawBuses]) => {
-    if (rawBuses.length === 0) {
+    if (excludedRoutes.includes(busId) || rawBuses.length === 0) {
       return;
     }
     const rawBus = rawBuses[0];
@@ -271,19 +302,15 @@ function argMin<T>(arr: T[]): number {
   return idx;
 }
 
-type StationsToNodes = {
-  [K: RouteId]: {
-    [K: StationId]: number;
-  };
-};
+type StationsToNodes = Record<RouteId, Record<StationId, number>>
 
-function mapStationsToNodes(routes: { [K: RouteId]: Route }): StationsToNodes {
+function mapStationsToNodes(routes: Record<RouteId, Route>): StationsToNodes {
   const stationsToNodes: StationsToNodes = {};
   Object.entries(routes).forEach(([routeId, route]) => {
     const stationsPerRouteToNode: { [K: StationId]: number } = {};
     route.path.forEach((station) => {
       const distancesToStation = route.nodes.map((node) =>
-        turf.distance(station.position, node)
+        distance(station.position, node)
       );
       const bestNode = argMin(distancesToStation);
       stationsPerRouteToNode[station.id] = bestNode;
@@ -297,10 +324,10 @@ function getNextStation(
   bus: Bus,
   route: Route,
   stationsToNodes: StationsToNodes,
-  stations: { [K: StationId]: Station }
+  stations: Record<StationId, Station>
 ): [number, number] {
   const currIdx = argMin(
-    route.nodes.map((p) => turf.distance(bus.position, p))
+    route.nodes.map((p) => distance(bus.position, p))
   );
 
   // TODO: this is a mess lmao
@@ -324,12 +351,12 @@ function getNextStation(
       (stationId) => stationsForRoute[stationId] === prevIdx
     )!;
 
-    console.log("Curr Idx: ", currIdx);
-    console.log("Curr Pos: ", route.nodes[currIdx].geometry.coordinates);
-    console.log("Prev Station Name: ", stations[prevStation].name);
-    console.log("Prev Station Idx: ", prevIdx);
-    console.log("Next Station Name: ", stations[bestFitStation].name);
-    console.log("Next Station Idx: ", stationsForRoute[bestFitStation]);
+    logger("debug", "Curr Idx: ", currIdx);
+    logger("debug", "Curr Pos: ", route.nodes[currIdx]);
+    logger("debug", "Prev Station Name: ", stations[prevStation].name);
+    logger("debug", "Prev Station Idx: ", prevIdx);
+    logger("debug", "Next Station Name: ", stations[bestFitStation].name);
+    logger("debug", "Next Station Idx: ", stationsForRoute[bestFitStation]);
   }
 
   return [currIdx, stationsForRoute[bestFitStation]];
@@ -352,7 +379,7 @@ function getDistanceToNextStation(
   let curr = currIdx;
   while (curr !== nextStationIdx) {
     const nextIdx = curr + 1 >= route.nodes.length ? 0 : curr + 1;
-    totalDistance += turf.distance(route.nodes[curr], route.nodes[nextIdx], {
+    totalDistance += distance(route.nodes[curr], route.nodes[nextIdx], {
       units: "meters",
     });
     curr = nextIdx;
@@ -360,29 +387,105 @@ function getDistanceToNextStation(
   return totalDistance;
 }
 
+// geometry ----------------------------------------------------------------------------------------
+
+// Taken from https://github.com/Turfjs/turf/
+export function degreesToRadians(degrees: number): number {
+  const radians = degrees % 360;
+  return (radians * Math.PI) / 180;
+}
+
+type Units =
+  | "meters"
+  | "metres"
+  | "millimeters"
+  | "millimetres"
+  | "centimeters"
+  | "centimetres"
+  | "kilometers"
+  | "kilometres"
+  | "miles"
+  | "nauticalmiles"
+  | "inches"
+  | "yards"
+  | "feet"
+  | "radians"
+  | "degrees";
+const EARTH_RADIUS = 6371008.8;
+const Factors: Record<Units, number> = {
+  centimeters: EARTH_RADIUS * 100,
+  centimetres: EARTH_RADIUS * 100,
+  degrees: 360 / (2 * Math.PI),
+  feet: EARTH_RADIUS * 3.28084,
+  inches: EARTH_RADIUS * 39.37,
+  kilometers: EARTH_RADIUS / 1000,
+  kilometres: EARTH_RADIUS / 1000,
+  meters: EARTH_RADIUS,
+  metres: EARTH_RADIUS,
+  miles: EARTH_RADIUS / 1609.344,
+  millimeters: EARTH_RADIUS * 1000,
+  millimetres: EARTH_RADIUS * 1000,
+  nauticalmiles: EARTH_RADIUS / 1852,
+  radians: 1,
+  yards: EARTH_RADIUS * 1.0936,
+};
+
+export function radiansToLength(
+  radians: number,
+  units: Units = "kilometers"
+): number {
+  const factor = Factors[units];
+  if (!factor) {
+    throw new Error(units + " units is invalid");
+  }
+  return radians * factor;
+}
+
+function distance(
+  from: Coord,
+  to: Coord,
+  options: {
+    units?: Units;
+  } = {}
+) {
+  const dLat = degreesToRadians(to[1] - from[1]);
+  const dLon = degreesToRadians(to[0] - from[0]);
+  const lat1 = degreesToRadians(from[1]);
+  const lat2 = degreesToRadians(to[1]);
+
+  const a =
+    Math.pow(Math.sin(dLat / 2), 2) +
+    Math.pow(Math.sin(dLon / 2), 2) * Math.cos(lat1) * Math.cos(lat2);
+
+  return radiansToLength(
+    2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)),
+    options.units
+  );
+}
+
+// startup -----------------------------------------------------------------------------------------
+
 async function main() {
   const routesData = await getRoutes();
   const stopsData = await getStops();
   const busesData = await getBuses();
 
-  const { routes, stations } = parseRoutesAndStations(routesData, stopsData);
-  const buses = parseBuses(busesData);
+  const { routes, stations, excludedRoutes } = parseRoutesAndStations(routesData, stopsData);
+  const buses = parseBuses(busesData, excludedRoutes);
   const stationsToNodes = mapStationsToNodes(routes);
 
   const greenHop = buses["408282"];
-  const distanceToNextStation = getDistanceToNextStation(
-    greenHop,
-    routes[greenHop.routeId],
-    stationsToNodes,
-    stations
-  );
-  console.log(toMiles(distanceToNextStation), "mi");
+  if (greenHop) {
+    const distanceToNextStation = getDistanceToNextStation(
+      greenHop,
+      routes[greenHop.routeId],
+      stationsToNodes,
+      stations
+    );
+    logger("info", `${distanceToNextStation} ${UNIT}`);
+  } else {
+    logger("info", "No bus data")
+  }
 }
 
-function toMiles(meters: number) {
-  return meters * 0.000621371192;
-}
-
-if (DEBUG) {
-  await main()
-}
+await main()

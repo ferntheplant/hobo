@@ -18,19 +18,15 @@ Some dude's hacky GUI client [here](https://nihal-pinto.github.io/Passio-STAY/)
   - Hoboken system: 466
   - Hoboken routes:
     - 46857, 47234, 47235 (green hop), 47233
-- Look at types and comments in `main.ts` to see what the raw API responses look like
+- Look at types and comments in `main.ts:passio-api` to see what the raw API responses look like
 - instead of ETA we compute estimated distance to next stop since it's easier
 
-- TODO: handle cases when no HOP buses are active
-  - probably just some validation checks for "empty" arrays right after hitting API
-  - also handle `excludedRoutes` for drop-down menu below
 - TODO: build basic frontend with pure HTML and CSS
   - default to showing info for Red Hop 12th st and Green hop Trader Joe's
   - include drop-down selector to pick different lines/stations
   - button to instantly swap from home view to PATH view
-- TODO: see if I can reimplement `turf.distance` to make this 0 dependency
 - TODO: move types to JSDoc to eliminate build step
-  - probably a huge pain in the ass and bun is pretty easy??
+  - probably a huge pain in the ass and `bun build` is pretty easy??
 
 ## NJ Transit Bus 126
 

@@ -1,17 +1,14 @@
 {
   "name": "hobo",
   "module": "main.ts",
-  "type": "module",
   "devDependencies": {
     "@types/bun": "latest"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
   },
-  "dependencies": {
-    "@turf/turf": "^7.0.0"
-  },
   "scripts": {
     "build": "bun build ./main.ts --outdir ./out --target browser --minify"
-  }
+  },
+  "type": "module"
 }
