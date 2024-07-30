@@ -25,8 +25,22 @@ Some dude's hacky GUI client [here](https://nihal-pinto.github.io/Passio-STAY/)
   - default to showing info for Red Hop 12th st and Green hop Trader Joe's
   - include drop-down selector to pick different lines/stations
   - button to instantly swap from home view to PATH view
+- TODO: record times to travel between nodes to build up histogram
+  - how to persist? Just a file? Redis? SQLite? "Real db"?
+  - Architecture
+    - every time we check in record the current time stamp, real position, and closest route node idx and position
+    - SOLUTION 1: periodically compute time deltas + distance traveled during those deltas
+      - compute as total distance traveled from previous node to current node
+      - save as map from distance to list of time deltas
+      - what happens then the bus goes way off course due to missed turns or road closures?
+    - SOLUTION 2: check in often enough to capture many instances of bus being near a station (<0.25mi?)
+      - Record all time deltas between adjacent keyed by time of day and day of week
+    - any time we check in look up saved time to next stop to show ETA
 - TODO: move types to JSDoc to eliminate build step
   - probably a huge pain in the ass and `bun build` is pretty easy??
+  - Should also add linter and JSDoc typechecker while I'm at it
+- TODO: split up into modules as described by comments
+  - might be unnecessary as the file is still manageable
 
 ## NJ Transit Bus 126
 

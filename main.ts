@@ -1,31 +1,46 @@
 // global ------------------------------------------------------------------------------------------
 
-// TODO: set these via env variables
+// TODO: set these via env variables with runtime validation
 const SERVICE_NAME = "hobo";
 const VERSION = "0.0.1";
-const DEBUG = false;
+const DEBUG = true;
 const LOG_LEVEL = DEBUG ? "debug" : "info";
+const PORT = 8080;
+const HOSTNAME = "localhost";
 const UNIT: Units = "miles";
-const DEVICE_ID = Math.floor(Math.random() * 10 ** 8).toString();
+const DEVICE_ID = Math.floor(Math.random() * 10 ** 8).toString(); // should I play nice and use a static device?
 const BASE_URL = `https://passio3.com/www/mapGetData.php?wTransloc=1&deviceId=${DEVICE_ID}`;
 const HOBOKEN_SYSTEM_ID = "466";
 
-type LogLevel = "debug" | "info" | "warn" | "error" | "fatal";
+type HopRoute = "green" | "red" | "blue" | "senior" | "holiday";
+const HopRouteIds: Record<HopRoute, RouteId> = <const>{
+  green: "47235",
+  red: "47234",
+  blue: "47235",
+  senior: "47233",
+  holiday: "6012",
+};
+const HOP_ROUTES: HopRoute[] = Object.keys(HopRouteIds) as HopRoute[];
+
+type LogLevel = "everything" | "debug" | "info" | "warn" | "error" | "fatal";
 const LogPriorities: Record<LogLevel, number> = <const>{
   fatal: -1,
   error: 0,
   warn: 10,
   info: 20,
   debug: 100,
+  everything: 1000,
 };
 Object.freeze(LogPriorities);
 const GlobalPriority = LogPriorities[LOG_LEVEL];
 
-function logger(level: LogLevel, message: string, ...rest: any): void {
+function logger(level: LogLevel, message: string, rest?: any): void {
   const givenPriority = LogPriorities[level];
   if (givenPriority <= GlobalPriority) {
     console.log(
-      `${new Date().toISOString()} [${SERVICE_NAME}-${VERSION}] ${level}: ${message} ${rest}`
+      `${new Date().toISOString()} [${SERVICE_NAME}-${VERSION}] ${level}: ${message}${
+        !!rest ? " " + JSON.stringify(rest) : ""
+      }`
     );
   }
 }
@@ -52,8 +67,8 @@ type PassioStop = {
   stopId: string;
   position: string; // index
   name: string;
-  latitude: number;
-  longitude: number;
+  latitude: number; // number for some reason?
+  longitude: number; // number for some reason?
   id: string;
   radius: number;
   routeName: string;
@@ -79,7 +94,7 @@ type PassioRoutePoint = {
 };
 
 type PassioGroupRoute = {
-  // unsure what this means semantically
+  // unsure what this entire type means semantically
   userId: string; // systemId
   name: string;
   id: string;
@@ -126,7 +141,7 @@ async function getRoutes() {
 
   // TODO: runtime validation
   const routesData = (await res.json()) as PassioRoute[];
-  logger("debug", "Routes data: ", routesData);
+  logger("everything", "Routes data: ", routesData);
   return routesData;
 }
 
@@ -141,7 +156,7 @@ async function getStops() {
 
   // TODO: runtime validation
   const stopsData = (await res.json()) as StopsResponse;
-  logger("debug", "Stops data: ", stopsData);
+  logger("everything", "Stops data: ", stopsData);
   return stopsData;
 }
 
@@ -156,7 +171,7 @@ async function getBuses() {
 
   // TODO: runtime validation
   const busesData = (await res.json()) as BusesResponse;
-  logger("debug", "Buses data: ", busesData);
+  logger("everything", "Buses data: ", busesData);
   return busesData;
 }
 
@@ -171,6 +186,7 @@ type GroupId = string;
 
 type Route = {
   id: RouteId; // myid
+  name: string;
   active: boolean;
   position: Coord;
   distance: number;
@@ -241,6 +257,7 @@ function parseRoutesAndStations(
     const nodes = rawNodes.map((node) => parsePosition(node.lat, node.lng));
     const route: Route = {
       id: rawRoute.myid,
+      name: rawRoute.name,
       active: rawRoute.outdated === "1",
       position: parsePosition(rawRoute.latitude, rawRoute.longitude),
       distance: rawRoute.distance,
@@ -319,7 +336,7 @@ function mapStationsToNodes(routes: Record<RouteId, Route>): StationsToNodes {
     const stationsPerRouteToNode: { [K: StationId]: number } = {};
     route.path.forEach((station) => {
       const distancesToStation = route.nodes.map((node) =>
-        distance(station.position, node)
+        distance(station.position, node, { units: UNIT })
       );
       const bestNode = argMin(distancesToStation);
       stationsPerRouteToNode[station.id] = bestNode;
@@ -334,8 +351,10 @@ function getNextStation(
   route: Route,
   stationsToNodes: StationsToNodes,
   stations: Record<StationId, Station>
-): [number, number] {
-  const currIdx = argMin(route.nodes.map((p) => distance(bus.position, p)));
+) {
+  const currIdx = argMin(
+    route.nodes.map((p) => distance(bus.position, p, { units: UNIT }))
+  );
 
   // TODO: this is a mess lmao
   const stationsForRoute = stationsToNodes[route.id];
@@ -366,28 +385,24 @@ function getNextStation(
     logger("debug", "Next Station Idx: ", stationsForRoute[bestFitStation]);
   }
 
-  return [currIdx, stationsForRoute[bestFitStation]];
+  return {
+    currStationIdx: currIdx,
+    nextStationIdx: bestFitIdx,
+    nextStation: bestFitStation,
+  };
 }
 
 function getDistanceToNextStation(
-  bus: Bus,
-  route: Route,
-  stationsToNodes: StationsToNodes,
-  stations: { [K: StationId]: Station }
+  currStationIdx: number,
+  nextStationIdx: number,
+  route: Route
 ) {
-  const [currIdx, nextStationIdx] = getNextStation(
-    bus,
-    route,
-    stationsToNodes,
-    stations
-  );
-
   let totalDistance = 0;
-  let curr = currIdx;
+  let curr = currStationIdx;
   while (curr !== nextStationIdx) {
     const nextIdx = curr + 1 >= route.nodes.length ? 0 : curr + 1;
     totalDistance += distance(route.nodes[curr], route.nodes[nextIdx], {
-      units: "meters",
+      units: UNIT,
     });
     curr = nextIdx;
   }
@@ -470,9 +485,59 @@ function distance(
   );
 }
 
-// startup -----------------------------------------------------------------------------------------
+// server ------------------------------------------------------------------------------------------
 
-async function main() {
+type RequestBody = {
+  busName: HopRoute;
+};
+
+// TODO: cleaner, more extensible validation
+function validateBody(body: unknown): RequestBody {
+  if (body === null || typeof body !== "object") {
+    throw new Error("Empty request body");
+  }
+  if (!Object.hasOwn(body, "busName")) {
+    throw new Error("Request missing key 'busName'");
+  }
+  const providedBusName = (body as any)["busName"] as string;
+  if (!(HOP_ROUTES as string[]).includes(providedBusName)) {
+    throw new Error("Unknown bus route");
+  }
+  return {
+    busName: providedBusName as HopRoute,
+  };
+}
+
+async function handler(pathname: string, payload: unknown): Promise<Response> {
+  const body = validateBody(payload);
+  logger("debug", "Body:", body);
+  if (pathname !== "/hop") {
+    return new Response("404");
+  }
+  const res = await testHopDistance(HopRouteIds[body.busName]);
+  return new Response(res);
+}
+
+const server = Bun.serve({
+  port: PORT,
+  hostname: HOSTNAME,
+  async fetch(req) {
+    logger("debug", "Processing request");
+    const url = new URL(req.url);
+    const body = await req.json();
+    return await handler(url.pathname, body);
+  },
+  // TODO: correct status codes
+  error(err) {
+    return new Response(`400: ${err.message}`);
+  },
+});
+
+logger("info", `Server running on ${server.hostname}:${server.port}`);
+
+// testing -----------------------------------------------------------------------------------------
+
+async function testHopDistance(routeId: string) {
   const routesData = await getRoutes();
   const stopsData = await getStops();
   const busesData = await getBuses();
@@ -484,18 +549,29 @@ async function main() {
   const buses = parseBuses(busesData, excludedRoutes);
   const stationsToNodes = mapStationsToNodes(routes);
 
-  const greenHop = buses["408282"];
-  if (greenHop) {
-    const distanceToNextStation = getDistanceToNextStation(
-      greenHop,
-      routes[greenHop.routeId],
+  const bus = Object.values(buses).find((bus) => bus.routeId === routeId);
+  if (bus) {
+    const { currStationIdx, nextStationIdx, nextStation } = getNextStation(
+      bus,
+      routes[bus.routeId],
       stationsToNodes,
       stations
     );
-    logger("info", `${distanceToNextStation} ${UNIT}`);
+    const distanceToNextStation = getDistanceToNextStation(
+      currStationIdx,
+      nextStationIdx,
+      routes[bus.routeId]
+    );
+    const rtn = `${distanceToNextStation.toFixed(3)} ${UNIT} to ${
+      stations[nextStation].name
+    }`;
+    logger("debug", rtn);
+    return rtn;
   } else {
-    logger("info", "No bus data");
+    const rtn = "No bus data";
+    logger("warn", rtn);
+    return rtn;
   }
 }
 
-await main();
+// await testHopDistance("408282");
