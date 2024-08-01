@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/png" href="/public/favicon.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.min.css">
+  <title>Hobo</title>
+  <style>
+    .bus {
+      border-radius: 5px;
+      padding: 5px;
+    }
+
+    .green-hop {
+      color: #fff;
+      background-color: green;
+    }
+
+    .red-hop {
+      color: #fff;
+      background-color: red;
+    }
+
+    .blue-hop {
+      color: #fff;
+      background-color: blue;
+    }
+
+    .senior-hop {
+      color: #000;
+      background-color: orange;
+    }
+
+    .njtransit {
+      color: #fff;
+      background-color: cornflowerblue;
+    }
+
+    .eta {
+      font-weight: bolder;
+    }
+
+    .location {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>The Hobo Commute</h1>
+  <div>
+    <h2>Hippity Hoppity</h2>
+    <div id="hop_container">
+      <p id="green"><span class="bus green-hop">GREEN</span> hop is <span id="hop_eta" class="eta"></span> from <span
+          id="hop_location" class="location"></span></p>
+      <p id="red"><span class="bus red-hop">RED</span> hop is <span id="hop_eta" class="eta"></span> from <span
+          id="hop_location" class="location"></span></p>
+      <p id="blue"><span class="bus blue-hop">BLUE</span> hop is <span id="hop_eta" class="eta"></span> from <span
+          id="hop_location" class="location"></span></p>
+      <p id="senior"><span class="bus senior-hop">SENIOR</span> hop is <span id="hop_eta" class="eta"></span> from <span
+          id="hop_location" class="location"></span></p>
+    </div>
+    <h2>That Bussy</h3>
+      <div id="126_container">
+        <p id="14_bus"><span class="bus njtransit">126</span> bus is <span id="14_eta" class="eta">X.XXX miles</span>
+          from <span class="location">14th and Bloomfield</span></p>
+        <p id="willow_bus"><span class="bus njtransit">126</span> bus is <span id="willow_eta" class="eta">X.XXX
+            miles</span> from <span class="location">Willow Ave</span></p>
+      </div>
+  </div>
+</body>
