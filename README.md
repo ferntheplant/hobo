@@ -24,11 +24,9 @@ Some dude's hacky GUI client [here](https://nihal-pinto.github.io/Passio-STAY/)
 - TODO: build basic frontend with pure HTML and CSS
   - default to showing info for Red Hop 12th st and Green hop Trader Joe's
   - include drop-down selector to pick different lines/stations
-  - button to instantly swap from home view to PATH view
-- TODO: record times to travel between nodes to build up histogram
-  - how to persist? Just a file? Redis? SQLite? "Real db"?
+- TODO: build up histogram to provide ETAs
   - Architecture
-    - every time we check in record the current time stamp, real position, and closest route node idx and position
+    - every time we check in record the current time, route, and bus location
     - SOLUTION 1: periodically compute time deltas + distance traveled during those deltas
       - compute as total distance traveled from previous node to current node
       - save as map from distance to list of time deltas
@@ -39,9 +37,11 @@ Some dude's hacky GUI client [here](https://nihal-pinto.github.io/Passio-STAY/)
 - TODO: move types to JSDoc to eliminate build step
   - probably a huge pain in the ass and `bun build` is pretty easy??
   - Should also add linter and JSDoc typechecker while I'm at it
-- TODO: split up into modules as described by comments
-  - might be unnecessary as the file is still manageable
+  - split up into modules as described by comments
+    - might be unnecessary as the file is still manageable
 
 ## NJ Transit Bus 126
 
 TODO
+
+- button to instantly swap from home view to PATH view
