@@ -1,4 +1,4 @@
-// global ------------------------------------------------------------------------------------------
+// global ----------------------------------------------------------------------
 // TODO: set these via env variables with runtime validation
 // TODO: fix relative filepaths to be w.r.t. project root rather than main.ts
 
@@ -12,9 +12,9 @@ const UNIT: Units = "miles";
 const DEVICE_ID = Math.floor(Math.random() * 10 ** 8).toString(); // should I play nice and use a static device?
 const BASE_URL = `https://passio3.com/www/mapGetData.php?wTransloc=1&deviceId=${DEVICE_ID}`;
 const HOBOKEN_SYSTEM_ID = "466";
-const PINGS_TABLE_NAME = "pings"
+const PINGS_TABLE_NAME = "pings";
 
-type HopRoute = "green" | "red" | "blue" | "senior" // | "holiday";
+type HopRoute = "green" | "red" | "blue" | "senior"; // | "holiday";
 const HopRouteIds: Record<HopRoute, RouteId> = <const>{
   green: "47235",
   red: "47233",
@@ -35,18 +35,18 @@ const LogPriorities: Record<LogLevel, number> = <const>{
 };
 Object.freeze(LogPriorities);
 
-function logger(level: LogLevel, message: string, rest?: any): void {
+function logger(level: LogLevel, message: string, rest?: unknown): void {
   const givenPriority = LogPriorities[level];
   if (givenPriority <= LogPriorities[LOG_LEVEL]) {
     console.log(
       `${new Date().toISOString()} [${SERVICE_NAME}-${VERSION}] ${level}: ${message}${
-        !!rest ? " " + JSON.stringify(rest) : ""
-      }`
+        rest ? ` ${JSON.stringify(rest)}` : ""
+      }`,
     );
   }
 }
 
-// passio-api --------------------------------------------------------------------------------------
+// passio-api ------------------------------------------------------------------
 type PassioRoute = {
   name: string;
   userId: string; // systemId
@@ -78,13 +78,13 @@ type PassioStop = {
 type PassioStopRouteEntry = [
   string, // index
   string, // stopId
-  number // remoteGroupId
+  number, // remoteGroupId
 ];
 
 type PassioStopRoute = [
   string, // name
   string, // color
-  ...PassioStopRouteEntry[]
+  ...PassioStopRouteEntry[],
 ];
 
 type PassioRoutePoint = {
@@ -175,7 +175,7 @@ async function getBuses() {
   return busesData;
 }
 
-// core --------------------------------------------------------------------------------------------
+// core ------------------------------------------------------------------------
 type Coord = [number, number];
 type Node = Coord;
 type RouteId = string;
@@ -216,12 +216,12 @@ type Station = {
 };
 
 function parsePosition(lat: string, long: string): Coord {
-  return [parseFloat(lat), parseFloat(long)];
+  return [Number.parseFloat(lat), Number.parseFloat(long)];
 }
 
 function parseRoutesAndStations(
   routeData: PassioRoute[],
-  stopsData: StopsResponse
+  stopsData: StopsResponse,
 ): {
   routes: Record<RouteId, Route>;
   stations: Record<StationId, Station>;
@@ -230,22 +230,22 @@ function parseRoutesAndStations(
   const stations: Record<StationId, Station> = {};
   const routes: Record<RouteId, Route> = {};
   const excludedRoutes = stopsData.excludedRoutesID.map(String);
-  routeData.forEach((rawRoute) => {
+  for (const rawRoute of routeData) {
     if (excludedRoutes.includes(rawRoute.myid)) {
-      return;
+      continue;
     }
     const rawPath = stopsData.routes[rawRoute.myid].slice(2);
     const parsedPath: Station[] = rawPath.map((routeEntry) => {
       const stationId = routeEntry[1];
-      const rawStop = stopsData.stops["ID" + stationId]; // keyed with ID prefix
+      const rawStop = stopsData.stops[`ID ${stationId}`]; // keyed with ID prefix
       const station = {
         id: stationId,
         name: rawStop.name,
         routeId: rawStop.routeId,
-        index: parseInt(rawStop.position),
+        index: Number.parseInt(rawStop.position),
         position: parsePosition(
           String(rawStop.latitude),
-          String(rawStop.longitude)
+          String(rawStop.longitude),
         ),
         radius: rawStop.radius,
       };
@@ -267,7 +267,7 @@ function parseRoutesAndStations(
       nodes: nodes,
     };
     routes[rawRoute.myid] = route;
-  });
+  }
   return {
     routes,
     stations,
@@ -277,12 +277,12 @@ function parseRoutesAndStations(
 
 function parseBuses(
   busesData: BusesResponse,
-  excludedRoutes: RouteId[]
+  excludedRoutes: RouteId[],
 ): Record<BusId, Bus> {
   const buses: Record<BusId, Bus> = {};
-  Object.entries(busesData.buses).forEach(([busId, rawBuses]) => {
+  for (const [busId, rawBuses] of Object.entries(busesData.buses)) {
     if (excludedRoutes.includes(busId) || rawBuses.length === 0) {
-      return;
+      continue;
     }
     const rawBus = rawBuses[0];
     const bus: Bus = {
@@ -290,12 +290,12 @@ function parseBuses(
       name: rawBus.busName,
       routeId: rawBus.routeId,
       active: rawBus.outdated === 1,
-      load: parseFloat((rawBus.paxLoad / rawBus.totalCap).toFixed(2)),
+      load: Number.parseFloat((rawBus.paxLoad / rawBus.totalCap).toFixed(2)),
       position: parsePosition(rawBus.latitude, rawBus.longitude),
-      bearing: parseFloat(rawBus.calculatedCourse),
+      bearing: Number.parseFloat(rawBus.calculatedCourse),
     };
     buses[bus.id] = bus;
-  });
+  }
   return buses;
 }
 
@@ -331,17 +331,17 @@ type StationsToNodes = Record<RouteId, Record<StationId, number>>;
 
 function mapStationsToNodes(routes: Record<RouteId, Route>): StationsToNodes {
   const stationsToNodes: StationsToNodes = {};
-  Object.entries(routes).forEach(([routeId, route]) => {
+  for (const [routeId, route] of Object.entries(routes)) {
     const stationsPerRouteToNode: { [K: StationId]: number } = {};
     route.path.forEach((station) => {
       const distancesToStation = route.nodes.map((node) =>
-        distance(station.position, node, { units: UNIT })
+        distance(station.position, node, { units: UNIT }),
       );
       const bestNode = argMin(distancesToStation);
       stationsPerRouteToNode[station.id] = bestNode;
     });
     stationsToNodes[routeId] = stationsPerRouteToNode;
-  });
+  }
   return stationsToNodes;
 }
 
@@ -349,10 +349,10 @@ function getNextStation(
   bus: Bus,
   route: Route,
   stationsToNodes: StationsToNodes,
-  stations: Record<StationId, Station>
+  stations: Record<StationId, Station>,
 ) {
   const currIdx = argMin(
-    route.nodes.map((p) => distance(bus.position, p, { units: UNIT }))
+    route.nodes.map((p) => distance(bus.position, p, { units: UNIT })),
   );
 
   // TODO: this is a mess lmao
@@ -361,18 +361,16 @@ function getNextStation(
   const futureStations = stationIdxes.filter((idx) => idx > currIdx);
   const bestFitIdx = min(futureStations) || min(stationIdxes)!;
   const bestFitStation = Object.keys(stationsForRoute).find(
-    (stationId) => stationsForRoute[stationId] === bestFitIdx
+    (stationId) => stationsForRoute[stationId] === bestFitIdx,
   )!;
 
   const sortedStationIdxes = stationIdxes.sort();
-  const idxOfBestFitIdx = sortedStationIdxes.findIndex(
-    (v) => v === bestFitIdx
-  );
+  const idxOfBestFitIdx = sortedStationIdxes.findIndex((v) => v === bestFitIdx);
   const idxOfPrevIdx =
     idxOfBestFitIdx - 1 >= 0 ? idxOfBestFitIdx - 1 : stationIdxes.length - 1;
   const prevIdx = sortedStationIdxes[idxOfPrevIdx];
   const prevStation = Object.keys(stationsForRoute).find(
-    (stationId) => stationsForRoute[stationId] === prevIdx
+    (stationId) => stationsForRoute[stationId] === prevIdx,
   )!;
 
   logger("everything", "Curr Idx: ", currIdx);
@@ -392,7 +390,7 @@ function getNextStation(
 function getDistanceToNextStation(
   currStationIdx: number,
   nextStationIdx: number,
-  route: Route
+  route: Route,
 ) {
   let totalDistance = 0;
   let curr = currStationIdx;
@@ -413,7 +411,7 @@ async function prepareData() {
 
   const { routes, stations, excludedRoutes } = parseRoutesAndStations(
     routesData,
-    stopsData
+    stopsData,
   );
   const buses = parseBuses(busesData, excludedRoutes);
   const stationsToNodes = mapStationsToNodes(routes);
@@ -422,11 +420,11 @@ async function prepareData() {
     stations,
     excludedRoutes,
     buses,
-    stationsToNodes
-  }
+    stationsToNodes,
+  };
 }
 
-// geometry ----------------------------------------------------------------------------------------
+// geometry --------------------------------------------------------------------
 // Taken from https://github.com/Turfjs/turf/
 export function degreesToRadians(degrees: number): number {
   const radians = degrees % 360;
@@ -470,7 +468,7 @@ const Factors: Record<Units, number> = {
 
 export function radiansToLength(
   radians: number,
-  units: Units = "kilometers"
+  units: Units = "kilometers",
 ): number {
   const factor = Factors[units];
   if (!factor) {
@@ -484,7 +482,7 @@ function distance(
   to: Coord,
   options: {
     units?: Units;
-  } = {}
+  } = {},
 ) {
   const dLat = degreesToRadians(to[1] - from[1]);
   const dLon = degreesToRadians(to[0] - from[0]);
@@ -497,12 +495,12 @@ function distance(
 
   return radiansToLength(
     2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)),
-    options.units
+    options.units,
   );
 }
 
-// database ----------------------------------------------------------------------------------------
-import { Database } from 'bun:sqlite'
+// database --------------------------------------------------------------------
+import { Database } from "bun:sqlite";
 
 function validateSchema(db: Database): void {
   const tableQuery = db.query(`
@@ -512,34 +510,37 @@ function validateSchema(db: Database): void {
       position text,
       PRIMARY KEY (timestamp, route_id)
     );
-  `)
-  tableQuery.run()
+  `);
+  tableQuery.run();
 }
 
 type AddBusPingParams = {
-  $routeId: string
-  $position: string
-}
+  $routeId: string;
+  $position: string;
+};
 
 function makeDb() {
-  const db = new Database(path.resolve(import.meta.dir, '../db/hobo.sqlite'), { strict: true, create: true })
+  const db = new Database(path.resolve(import.meta.dir, "../db/hobo.sqlite"), {
+    strict: true,
+    create: true,
+  });
   // TODO: db.exec("PRAGMA journal_mode = WAL")
-  validateSchema(db)
-  logger("everything", "Connected to local sqlite db")
+  validateSchema(db);
+  logger("everything", "Connected to local sqlite db");
   const addBusPing = db.prepare<[], AddBusPingParams>(`
     INSERT INTO ${PINGS_TABLE_NAME} (timestamp, route_id, position) 
     VALUES (datetime('now'), $routeId, $position);
-  `)
+  `);
   return {
     queries: {
-      addBusPing
+      addBusPing,
     },
-    close: () => db.close(true)
-  }
+    close: () => db.close(true),
+  };
 }
-type HoboDb = ReturnType<typeof makeDb>
+type HoboDb = ReturnType<typeof makeDb>;
 
-// hot-reload --------------------------------------------------------------------------------------
+// hot-reload ------------------------------------------------------------------
 // taken from https://github.com/aabccd021/bun-html-live-reload
 import type {
   Server,
@@ -547,9 +548,9 @@ import type {
   ServerWebSocket,
   WebSocketHandler,
   WebSocketServeOptions,
-} from 'bun'
-import { watch } from 'fs'
-import path from 'path'
+} from "bun";
+import { watch } from "fs";
+import path from "path";
 
 declare global {
   var ws: ServerWebSocket<unknown> | undefined;
@@ -585,7 +586,7 @@ export type PureWebSocketServeOptions<WebSocketDataType> = Omit<
 
 const withHtmlLiveReload = <
   WebSocketDataType,
-  T extends PureWebSocketServeOptions<WebSocketDataType>
+  T extends PureWebSocketServeOptions<WebSocketDataType>,
 >(
   serveOptions: T,
 ): WebSocketServeOptions<WebSocketDataType> => {
@@ -596,13 +597,13 @@ const withHtmlLiveReload = <
     ...serveOptions,
     fetch: async (req, server) => {
       const reqUrl = new URL(req.url);
-      if (reqUrl.pathname === '/' + wsPath) {
+      if (reqUrl.pathname === "/" + wsPath) {
         const upgraded = server.upgrade(req);
 
         if (!upgraded) {
           return new Response(
             "Failed to upgrade websocket connection for live reload",
-            { status: 400 }
+            { status: 400 },
           );
         }
         return;
@@ -635,16 +636,16 @@ const withHtmlLiveReload = <
   };
 };
 
-// server ------------------------------------------------------------------------------------------
-import template from "../public/index.html" with { type: "text" }
+// server ----------------------------------------------------------------------
+import template from "../public/index.html" with { type: "text" };
 import { file } from "bun";
 
 type RequestBody = {
   busName: HopRoute;
 };
 
-const PATHS = <const>["/", "/hop", "/public/favicon.png"]
-type Path = typeof PATHS[number]
+const PATHS = <const>["/", "/hop", "/public/favicon.png"];
+type Path = (typeof PATHS)[number];
 
 // TODO: clean-up and add more extensible validation
 function validateBody(body: unknown): RequestBody {
@@ -663,34 +664,51 @@ function validateBody(body: unknown): RequestBody {
   };
 }
 
-async function handler(pathname: Path, req: Request, db: HoboDb): Promise<Response> {
+async function handler(
+  pathname: Path,
+  req: Request,
+  db: HoboDb,
+): Promise<Response> {
   if (!PATHS.includes(pathname)) {
-    throw new Error("404: page not found")
+    throw new Error("404: page not found");
   }
   switch (pathname) {
-    case '/':
+    case "/":
       const rewriter = new HTMLRewriter();
       for (const color of HOP_ROUTES) {
-        const result = await testHopDistance(HopRouteIds[color])
+        const result = await testHopDistance(HopRouteIds[color]);
         rewriter
-          .on(`p#${color} > span#hop_eta`, { element(el) { el.setInnerContent(`${result.distance} ${UNIT}`) }})
-          .on(`p#${color} > span#hop_location`, { element(el) { el.setInnerContent(`${result.stationName}`) }})
-        const dbPayload: AddBusPingParams = { $routeId: HopRouteIds[color], $position: JSON.stringify(result.busPos) }
+          .on(`p#${color} > span#hop_eta`, {
+            element(el) {
+              el.setInnerContent(`${result.distance} ${UNIT}`);
+            },
+          })
+          .on(`p#${color} > span#hop_location`, {
+            element(el) {
+              el.setInnerContent(`${result.stationName}`);
+            },
+          });
+        const dbPayload: AddBusPingParams = {
+          $routeId: HopRouteIds[color],
+          $position: JSON.stringify(result.busPos),
+        };
         try {
-          logger("debug", "Writing to db:", dbPayload)
-          db.queries.addBusPing.all(dbPayload)
+          logger("debug", "Writing to db:", dbPayload);
+          db.queries.addBusPing.all(dbPayload);
         } catch (err) {
-          logger("error", `Failed to write ${color} to db:`, err)
+          logger("error", `Failed to write ${color} to db:`, err);
         }
       }
-      return new Response(rewriter.transform(template), { headers: { "Content-Type": "text/html" } })
+      return new Response(rewriter.transform(template), {
+        headers: { "Content-Type": "text/html" },
+      });
     case "/hop":
-      const payload = await req.json()
+      const payload = await req.json();
       const body = validateBody(payload);
-      const res = await testHopDistance(body.busName)
-      return new Response(`${res.distance} ${UNIT} to ${res.stationName}`)
+      const res = await testHopDistance(body.busName);
+      return new Response(`${res.distance} ${UNIT} to ${res.stationName}`);
     case "/public/favicon.png":
-      return new Response(file("../public/favicon.png"))
+      return new Response(file("../public/favicon.png"));
   }
 }
 
@@ -704,26 +722,23 @@ const serverOptions = (db: HoboDb): ServeOptions => ({
   },
   // TODO: correct status codes
   error(err) {
-    logger("warn", err.message)
+    logger("warn", err.message);
     return new Response(`[Error] ${err.message}`);
   },
-})
+});
 
-const db = makeDb()
-const server = Bun.serve(DEBUG ? withHtmlLiveReload(serverOptions(db)) : serverOptions(db));
+const db = makeDb();
+const server = Bun.serve(
+  DEBUG ? withHtmlLiveReload(serverOptions(db)) : serverOptions(db),
+);
 
 logger("info", `Server running on ${server.hostname}:${server.port}`);
 
 // TODO: server shutdown cleanup
 
-// testing -----------------------------------------------------------------------------------------
+// testing ---------------------------------------------------------------------
 async function testHopDistance(routeId: string) {
-  const {
-    routes,
-    stations,
-    buses,
-    stationsToNodes
-  } = await prepareData()
+  const { routes, stations, buses, stationsToNodes } = await prepareData();
 
   const bus = Object.values(buses).find((bus) => bus.routeId === routeId);
   if (bus) {
@@ -731,18 +746,18 @@ async function testHopDistance(routeId: string) {
       bus,
       routes[bus.routeId],
       stationsToNodes,
-      stations
+      stations,
     );
     const distanceToNextStation = getDistanceToNextStation(
       currStationIdx,
       nextStationIdx,
-      routes[bus.routeId]
+      routes[bus.routeId],
     );
     const rtn = {
       stationName: stations[nextStation].name,
       distance: distanceToNextStation.toFixed(3),
-      busPos: bus.position
-    }
+      busPos: bus.position,
+    };
     return rtn;
   } else {
     throw new Error("No bus data");
